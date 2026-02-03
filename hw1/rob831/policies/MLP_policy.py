@@ -14,18 +14,18 @@ from rob831.policies.base_policy import BasePolicy
 
 
 class MLPPolicy(BasePolicy, nn.Module, metaclass=abc.ABCMeta):
-
-    def __init__(self,
-                 ac_dim,
-                 ob_dim,
-                 n_layers,
-                 size,
-                 discrete=False,
-                 learning_rate=1e-4,
-                 training=True,
-                 nn_baseline=False,
-                 **kwargs
-                 ):
+    def __init__(
+        self,
+        ac_dim,
+        ob_dim,
+        n_layers,
+        size,
+        discrete=False,
+        learning_rate=1e-4,
+        training=True,
+        nn_baseline=False,
+        **kwargs,
+    ):
         super().__init__(**kwargs)
 
         # init vars
@@ -48,14 +48,14 @@ class MLPPolicy(BasePolicy, nn.Module, metaclass=abc.ABCMeta):
             self.logits_na.to(ptu.device)
             self.mean_net = None
             self.logstd = None
-            self.optimizer = optim.Adam(self.logits_na.parameters(),
-                                        self.learning_rate)
+            self.optimizer = optim.Adam(self.logits_na.parameters(), self.learning_rate)
         else:
             self.logits_na = None
             self.mean_net = ptu.build_mlp(
                 input_size=self.ob_dim,
                 output_size=self.ac_dim,
-                n_layers=self.n_layers, size=self.size,
+                n_layers=self.n_layers,
+                size=self.size,
             )
             self.mean_net.to(ptu.device)
             self.logstd = nn.Parameter(
@@ -64,7 +64,7 @@ class MLPPolicy(BasePolicy, nn.Module, metaclass=abc.ABCMeta):
             self.logstd.to(ptu.device)
             self.optimizer = optim.Adam(
                 itertools.chain([self.logstd], self.mean_net.parameters()),
-                self.learning_rate
+                self.learning_rate,
             )
 
     ##################################
@@ -80,8 +80,10 @@ class MLPPolicy(BasePolicy, nn.Module, metaclass=abc.ABCMeta):
         else:
             observation = obs[None]
 
-        # TODO return the action that the policy prescribes
-        raise NotImplementedError
+        observation = ptu.from_numpy(observation)
+        action_distribution = self(observation)
+        action = action_distribution.sample()
+        return ptu.to_numpy(action)
 
     # update/train this policy
     def update(self, observations, actions, **kwargs):
@@ -93,7 +95,20 @@ class MLPPolicy(BasePolicy, nn.Module, metaclass=abc.ABCMeta):
     # return more flexible objects, such as a
     # `torch.distributions.Distribution` object. It's up to you!
     def forward(self, observation: torch.FloatTensor) -> Any:
-        raise NotImplementedError
+        if self.discrete:
+            logits = self.logits_na(observation)
+            action_distribution = distributions.Categorical(logits=logits)
+            return action_distribution
+        else:
+            batch_mean = self.mean_net(observation)
+            scale_tril = torch.diag(torch.exp(self.logstd))
+            batch_dim = batch_mean.shape[0]
+            batch_scale_tril = scale_tril.repeat(batch_dim, 1, 1)
+            action_distribution = distributions.MultivariateNormal(
+                batch_mean,
+                scale_tril=batch_scale_tril,
+            )
+            return action_distribution
 
 
 #####################################################
@@ -104,12 +119,24 @@ class MLPPolicySL(MLPPolicy):
         super().__init__(ac_dim, ob_dim, n_layers, size, **kwargs)
         self.loss = nn.MSELoss()
 
-    def update(
-            self, observations, actions,
-            adv_n=None, acs_labels_na=None, qvals=None
-    ):
+    def update(self, observations, actions, adv_n=None, acs_labels_na=None, qvals=None):
         # TODO: update the policy and return the loss
-        loss = TODO
+        observations = ptu.from_numpy(observations)
+        actions = ptu.from_numpy(actions)
+
+        if self.discrete:
+            action_distribution = self(observations)
+            log_prob = action_distribution.log_prob(actions.long())
+            loss = -log_prob.mean()
+
+        else:
+            action_distribution = self(observations)
+            log_prob = action_distribution.log_prob(actions)
+            loss = -log_prob.mean()
+
+        self.optimizer.zero_grad()
+        loss.backward()
+        self.optimizer.step()
 
         return {
             # You can add extra logging information here, but keep this line
