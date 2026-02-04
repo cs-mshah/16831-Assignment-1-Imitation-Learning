@@ -3,14 +3,18 @@ import gym
 import numpy as np
 from rob831.policies.loaded_gaussian_policy import LoadedGaussianPolicy
 from rob831.infrastructure import utils
+from pathlib import Path
 
-EXPERT_POLICIES_DIR = "../policies/experts/"
+EXPERT_POLICIES_DIR = Path(os.path.dirname(os.path.abspath(__file__)))
+relative_POLICIES_DIR = "../policies/experts/"
+EXPERT_POLICIES_DIR = EXPERT_POLICIES_DIR / relative_POLICIES_DIR
+
 ENVS = {
-    "Ant-v2": "Ant.pkl",
-    "Humanoid-v2": "Humanoid.pkl",
-    "Walker2d-v2": "Walker2d.pkl",
-    "Hopper-v2": "Hopper.pkl",
-    "HalfCheetah-v2": "HalfCheetah.pkl",
+    "Ant-v2": str(EXPERT_POLICIES_DIR / "Ant.pkl"),
+    "Humanoid-v2": str(EXPERT_POLICIES_DIR / "Humanoid.pkl"),
+    "Walker2d-v2": str(EXPERT_POLICIES_DIR / "Walker2d.pkl"),
+    "Hopper-v2": str(EXPERT_POLICIES_DIR / "Hopper.pkl"),
+    "HalfCheetah-v2": str(EXPERT_POLICIES_DIR / "HalfCheetah.pkl"),
 }
 
 
@@ -27,8 +31,8 @@ def main():
         except Exception as e:
             print(f"Skipping {env_name}: {e}")
             continue
-
-        policy = LoadedGaussianPolicy(os.path.join(EXPERT_POLICIES_DIR, policy_file_name))
+        
+        policy = LoadedGaussianPolicy(policy_file_name)
 
         max_path_length = 1000
 
